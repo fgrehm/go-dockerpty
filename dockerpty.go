@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-func Start(client *docker.Client, container *docker.Container) (err error) {
+func Start(client *docker.Client, container *docker.Container, hostConfig *docker.HostConfig) (err error) {
 	var (
 		terminalFd    uintptr
 		oldState      *term.State
@@ -26,28 +26,17 @@ func Start(client *docker.Client, container *docker.Container) (err error) {
 	// stopped at the exitedChannel
 	go listenForContainerExit(client, container.ID, exitedChannel)
 
+	// Set up the pseudo terminal
 	oldState, err = term.SetRawTerminal(terminalFd)
 	if err != nil {
 		return
 	}
 
 	// Attach to the container on a separate goroutine
-	go func() {
-		err = client.AttachToContainer(docker.AttachToContainerOptions{
-			Container:    container.ID,
-			InputStream:  os.Stdin,
-			OutputStream: os.Stdout,
-			ErrorStream:  os.Stderr,
-			Stdin:        true,
-			Stdout:       true,
-			Stderr:       true,
-			Stream:       true,
-			RawTerminal:  true,
-		})
-	}()
+	go attachToContainer(client, container.ID)
 
 	// And finally start it
-	err = client.StartContainer(container.ID, &docker.HostConfig{})
+	err = client.StartContainer(container.ID, hostConfig)
 	if err != nil {
 		return err
 	}
@@ -63,9 +52,7 @@ func Start(client *docker.Client, container *docker.Container) (err error) {
 
 func listenForContainerExit(client *docker.Client, containerID string, exitedChannel chan struct{}) error {
 	listenerChannel := make(chan *docker.APIEvents)
-	if err := client.AddEventListener(listenerChannel); err != nil {
-		return err
-	}
+	client.AddEventListener(listenerChannel)
 
 	for {
 		event := <-listenerChannel
@@ -73,4 +60,18 @@ func listenForContainerExit(client *docker.Client, containerID string, exitedCha
 			exitedChannel <- struct{}{}
 		}
 	}
+}
+
+func attachToContainer(client *docker.Client, containerID string) {
+	client.AttachToContainer(docker.AttachToContainerOptions{
+		Container:    containerID,
+		InputStream:  os.Stdin,
+		OutputStream: os.Stdout,
+		ErrorStream:  os.Stderr,
+		Stdin:        true,
+		Stdout:       true,
+		Stderr:       true,
+		Stream:       true,
+		RawTerminal:  true,
+	})
 }
