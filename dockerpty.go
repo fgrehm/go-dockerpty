@@ -22,20 +22,9 @@ func Start(client *docker.Client, container *docker.Container) (err error) {
 		return errors.New("Not a terminal!")
 	}
 
-	listenerChannel := make(chan *docker.APIEvents)
-	if err = client.AddEventListener(listenerChannel); err != nil {
-		return
-	}
-
-	go func() {
-		for {
-			event := <-listenerChannel
-			if event.ID == container.ID && event.Status == "die" {
-				term.RestoreTerminal(terminalFd, oldState)
-				exitedChannel <- struct{}{}
-			}
-		}
-	}()
+	// This goroutine will listen to Docker events and will signal that is has
+	// stopped at the exitedChannel
+	go listenForContainerExit(client, container.ID, exitedChannel)
 
 	oldState, err = term.SetRawTerminal(terminalFd)
 	if err != nil {
@@ -57,12 +46,31 @@ func Start(client *docker.Client, container *docker.Container) (err error) {
 		})
 	}()
 
-	// Start container
+	// And finally start it
 	err = client.StartContainer(container.ID, &docker.HostConfig{})
 	if err != nil {
 		return err
 	}
 
+	// Wait until the container has exited
 	<-exitedChannel
+
+	// Clean up after the container has exited
+	term.RestoreTerminal(terminalFd, oldState)
+
 	return err
+}
+
+func listenForContainerExit(client *docker.Client, containerID string, exitedChannel chan struct{}) error {
+	listenerChannel := make(chan *docker.APIEvents)
+	if err := client.AddEventListener(listenerChannel); err != nil {
+		return err
+	}
+
+	for {
+		event := <-listenerChannel
+		if event.ID == containerID && event.Status == "die" {
+			exitedChannel <- struct{}{}
+		}
+	}
 }
