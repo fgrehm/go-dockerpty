@@ -16,7 +16,6 @@ This obviously only works when run in a terminal.
 package main
 
 import (
-	"fmt"
 	"github.com/fgrehm/go-dockerpty"
 	"github.com/fsouza/go-dockerclient"
 )
