@@ -10,9 +10,9 @@ import (
 
 func Start(client *docker.Client, container *docker.Container, hostConfig *docker.HostConfig) (err error) {
 	var (
-		terminalFd    uintptr
-		oldState      *term.State
-		out           io.Writer     = os.Stdout
+		terminalFd uintptr
+		oldState   *term.State
+		out        io.Writer = os.Stdout
 	)
 
 	if file, ok := out.(*os.File); ok {
