@@ -30,14 +30,14 @@ func Start(client *docker.Client, container *docker.Container, hostConfig *docke
 	// Clean up after the container has exited
 	defer term.RestoreTerminal(terminalFd, oldState)
 
+	// Attach to the container on a separate thread
+	go attachToContainer(client, container.ID)
+
 	// Start it
 	err = client.StartContainer(container.ID, hostConfig)
 	if err != nil {
 		return err
 	}
-
-	// Attach to the container
-	attachToContainer(client, container.ID)
 
 	return err
 }
