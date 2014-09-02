@@ -27,6 +27,9 @@ func Start(client *docker.Client, container *docker.Container, hostConfig *docke
 		return
 	}
 
+	// Clean up after the container has exited
+	defer term.RestoreTerminal(terminalFd, oldState)
+
 	// Start it
 	err = client.StartContainer(container.ID, hostConfig)
 	if err != nil {
@@ -35,9 +38,6 @@ func Start(client *docker.Client, container *docker.Container, hostConfig *docke
 
 	// Attach to the container
 	attachToContainer(client, container.ID)
-
-	// Clean up after the container has exited
-	defer term.RestoreTerminal(terminalFd, oldState)
 
 	return err
 }
