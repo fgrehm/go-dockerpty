@@ -31,19 +31,20 @@ func Start(client *docker.Client, container *docker.Container, hostConfig *docke
 	defer term.RestoreTerminal(terminalFd, oldState)
 
 	// Attach to the container on a separate thread
-	go attachToContainer(client, container.ID)
+	attachChan := make(chan error)
+	go attachToContainer(client, container.ID, attachChan)
 
 	// Start it
 	err = client.StartContainer(container.ID, hostConfig)
 	if err != nil {
-		return err
+		return
 	}
 
-	return err
+	return <-attachChan
 }
 
-func attachToContainer(client *docker.Client, containerID string) {
-	client.AttachToContainer(docker.AttachToContainerOptions{
+func attachToContainer(client *docker.Client, containerID string, errorChan chan error) {
+	err := client.AttachToContainer(docker.AttachToContainerOptions{
 		Container:    containerID,
 		InputStream:  os.Stdin,
 		OutputStream: os.Stdout,
@@ -54,4 +55,5 @@ func attachToContainer(client *docker.Client, containerID string) {
 		Stream:       true,
 		RawTerminal:  true,
 	})
+	errorChan <- err
 }
