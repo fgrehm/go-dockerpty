@@ -4,10 +4,10 @@ import (
 	"errors"
 	"github.com/fgrehm/go-dockerpty/term"
 	"github.com/fsouza/go-dockerclient"
-	gosignal "os/signal"
-	"syscall"
 	"io"
 	"os"
+	gosignal "os/signal"
+	"syscall"
 )
 
 func Start(client *docker.Client, container *docker.Container, hostConfig *docker.HostConfig) (err error) {
@@ -48,6 +48,38 @@ func Start(client *docker.Client, container *docker.Container, hostConfig *docke
 	return <-attachChan
 }
 
+func StartExec(client *docker.Client, exec *docker.Exec) (err error) {
+	var (
+		terminalFd uintptr
+		oldState   *term.State
+		out        io.Writer = os.Stdout
+	)
+
+	if file, ok := out.(*os.File); ok {
+		terminalFd = file.Fd()
+	} else {
+		return errors.New("Not a terminal!")
+	}
+
+	// Set up the pseudo terminal
+	oldState, err = term.SetRawTerminal(terminalFd)
+	if err != nil {
+		return
+	}
+
+	// Clean up after the exec command has exited
+	defer term.RestoreTerminal(terminalFd, oldState)
+
+	// Start it
+	errorChan := make(chan error)
+	go startExec(client, exec, errorChan)
+
+	// Make sure terminal resizes are passed on to the exec Tty
+	monitorExecTty(client, exec.ID, terminalFd)
+
+	return <-errorChan
+}
+
 func attachToContainer(client *docker.Client, containerID string, errorChan chan error) {
 	err := client.AttachToContainer(docker.AttachToContainerOptions{
 		Container:    containerID,
@@ -58,6 +90,18 @@ func attachToContainer(client *docker.Client, containerID string, errorChan chan
 		Stdout:       true,
 		Stderr:       true,
 		Stream:       true,
+		RawTerminal:  true,
+	})
+	errorChan <- err
+}
+
+func startExec(client *docker.Client, exec *docker.Exec, errorChan chan error) {
+	err := client.StartExec(exec.ID, docker.StartExecOptions{
+		Detach:       false,
+		Tty:          true,
+		InputStream:  os.Stdin,
+		OutputStream: os.Stdout,
+		ErrorStream:  os.Stderr,
 		RawTerminal:  true,
 	})
 	errorChan <- err
@@ -76,12 +120,33 @@ func monitorTty(client *docker.Client, containerID string, terminalFd uintptr) {
 	}()
 }
 
+// From https://github.com/docker/docker/blob/0d70706b4b6bf9d5a5daf46dd147ca71270d0ab7/api/client/utils.go#L222-L233
+func monitorExecTty(client *docker.Client, execID string, terminalFd uintptr) {
+	resizeExecTty(client, execID, terminalFd)
+
+	sigchan := make(chan os.Signal, 1)
+	gosignal.Notify(sigchan, syscall.SIGWINCH)
+	go func() {
+		for _ = range sigchan {
+			resizeExecTty(client, execID, terminalFd)
+		}
+	}()
+}
+
 func resizeTty(client *docker.Client, containerID string, terminalFd uintptr) error {
 	height, width := getTtySize(terminalFd)
 	if height == 0 && width == 0 {
 		return nil
 	}
 	return client.ResizeContainerTTY(containerID, height, width)
+}
+
+func resizeExecTty(client *docker.Client, containerID string, terminalFd uintptr) error {
+	height, width := getTtySize(terminalFd)
+	if height == 0 && width == 0 {
+		return nil
+	}
+	return client.ResizeExecTTY(containerID, height, width)
 }
 
 // From https://github.com/docker/docker/blob/0d70706b4b6bf9d5a5daf46dd147ca71270d0ab7/api/client/utils.go#L235-L247
