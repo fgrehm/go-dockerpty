@@ -8,6 +8,7 @@ import (
 	"os"
 	gosignal "os/signal"
 	"syscall"
+	"time"
 )
 
 func Start(client *docker.Client, container *docker.Container, hostConfig *docker.HostConfig) (err error) {
@@ -122,6 +123,11 @@ func monitorTty(client *docker.Client, containerID string, terminalFd uintptr) {
 
 // From https://github.com/docker/docker/blob/0d70706b4b6bf9d5a5daf46dd147ca71270d0ab7/api/client/utils.go#L222-L233
 func monitorExecTty(client *docker.Client, execID string, terminalFd uintptr) {
+	// HACK: For some weird reason on Docker 1.4.1 this resize is being triggered
+	//       before the Exec instance is running resulting in an error on the
+	//       Docker server. So we wait a little bit before triggering this first
+	//       resize
+	time.Sleep(50 * time.Millisecond)
 	resizeExecTty(client, execID, terminalFd)
 
 	sigchan := make(chan os.Signal, 1)
