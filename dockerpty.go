@@ -82,9 +82,11 @@ func StartExec(client *docker.Client, exec *docker.Exec) (err error) {
 }
 
 func attachToContainer(client *docker.Client, containerID string, errorChan chan error) {
+	r, w := io.Pipe()
+	go io.Copy(w, os.Stdin)
 	err := client.AttachToContainer(docker.AttachToContainerOptions{
 		Container:    containerID,
-		InputStream:  os.Stdin,
+		InputStream:  r,
 		OutputStream: os.Stdout,
 		ErrorStream:  os.Stderr,
 		Stdin:        true,
