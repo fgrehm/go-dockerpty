@@ -1,0 +1,6 @@
+[submodule "vendor/github.com/Sirupsen/logrus"]
+    path = vendor/github.com/Sirupsen/logrus
+    url = git@github.com:Sirupsen/logrus.git
+[submodule "vendor/github.com/fsouza/go-dockerclient"]
+    path = vendor/github.com/fsouza/go-dockerclient
+    url = git@github.com:fsouza/go-dockerclient.git
