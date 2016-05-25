@@ -1,5 +1,0 @@
-package dockerpty
-
-func main() {
-
-}
