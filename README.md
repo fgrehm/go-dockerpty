@@ -5,6 +5,10 @@ docker container, using the [Go client](https://github.com/fsouza/go-dockerclien
 
 Inspired by https://github.com/d11wtq/dockerpty
 
+## :warning: Unmaintained :warning:
+
+Project is no longer being maintained and has been archived.
+
 ## Usage
 
 This package provides two functions: `dockerpty.Start` and `dockerpty.StartExec`.
