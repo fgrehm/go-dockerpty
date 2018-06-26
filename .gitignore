@@ -1,0 +1,9 @@
+.DS_Store
+dockerpty
+dockerptyLinux
+dockerptyOSX
+dockerptyWindows
+dockerptyWindows.exe
+*.sublime-project
+*.sublime-workspace
+.nut

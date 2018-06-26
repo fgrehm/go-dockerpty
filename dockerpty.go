@@ -2,13 +2,15 @@ package dockerpty
 
 import (
 	"errors"
-	"github.com/fgrehm/go-dockerpty/term"
+	"github.com/docker/docker/pkg/term"
 	"github.com/fsouza/go-dockerclient"
 	"io"
 	"os"
 	gosignal "os/signal"
-	"syscall"
 	"time"
+	"runtime"
+	"github.com/docker/docker/pkg/signal"
+
 )
 
 func Start(client *docker.Client, container *docker.Container, hostConfig *docker.HostConfig) (err error) {
@@ -111,20 +113,46 @@ func startExec(client *docker.Client, exec *docker.Exec, errorChan chan error) {
 }
 
 // From https://github.com/docker/docker/blob/0d70706b4b6bf9d5a5daf46dd147ca71270d0ab7/api/client/utils.go#L222-L233
-func monitorTty(client *docker.Client, containerID string, terminalFd uintptr) {
+// Upgrade from commit deb6ea4702924ff390e4a57414f735b18e4d7185
+func monitorTty(client *docker.Client, containerID string, terminalFd uintptr) error {
+	// cli.resizeTty(id, isExec)
 	resizeTty(client, containerID, terminalFd)
 
-	sigchan := make(chan os.Signal, 1)
-	gosignal.Notify(sigchan, syscall.SIGWINCH)
-	go func() {
-		for _ = range sigchan {
-			resizeTty(client, containerID, terminalFd)
-		}
-	}()
+	if runtime.GOOS == "windows" {
+		go func() {
+			// prevH, prevW := cli.getTtySize()
+			prevH, prevW := getTtySize(terminalFd)
+			for {
+				time.Sleep(time.Millisecond * 250)
+				// h, w := cli.getTtySize()
+				h, w := getTtySize(terminalFd)
+
+
+				if prevW != w || prevH != h {
+					// cli.resizeTty(id, isExec)
+					resizeTty(client, containerID, terminalFd)
+				}
+				prevH = h
+				prevW = w
+			}
+		}()
+	} else {
+		sigchan := make(chan os.Signal, 1)
+		gosignal.Notify(sigchan, signal.SIGWINCH)
+		go func() {
+			for range sigchan {
+				// cli.resizeTty(id, isExec)
+				resizeTty(client, containerID, terminalFd)
+			}
+		}()
+	}
+	return nil
 }
 
 // From https://github.com/docker/docker/blob/0d70706b4b6bf9d5a5daf46dd147ca71270d0ab7/api/client/utils.go#L222-L233
+// Upgrade from commit deb6ea4702924ff390e4a57414f735b18e4d7185
 func monitorExecTty(client *docker.Client, execID string, terminalFd uintptr) {
+	// cli.resizeTty(id, isExec)
 	// HACK: For some weird reason on Docker 1.4.1 this resize is being triggered
 	//       before the Exec instance is running resulting in an error on the
 	//       Docker server. So we wait a little bit before triggering this first
@@ -132,14 +160,36 @@ func monitorExecTty(client *docker.Client, execID string, terminalFd uintptr) {
 	time.Sleep(50 * time.Millisecond)
 	resizeExecTty(client, execID, terminalFd)
 
-	sigchan := make(chan os.Signal, 1)
-	gosignal.Notify(sigchan, syscall.SIGWINCH)
-	go func() {
-		for _ = range sigchan {
-			resizeExecTty(client, execID, terminalFd)
-		}
-	}()
+	if runtime.GOOS == "windows" {
+		go func() {
+			// prevH, prevW := cli.getTtySize()
+			prevH, prevW := getTtySize(terminalFd)
+			for {
+				time.Sleep(time.Millisecond * 250)
+				// h, w := cli.getTtySize()
+				h, w := getTtySize(terminalFd)
+
+				if prevW != w || prevH != h {
+					// cli.resizeTty(id, isExec)
+					resizeExecTty(client, execID, terminalFd)
+				}
+				prevH = h
+				prevW = w
+			}
+		}()
+	} else {
+		sigchan := make(chan os.Signal, 1)
+		gosignal.Notify(sigchan, signal.SIGWINCH)
+		go func() {
+			for range sigchan {
+				// cli.resizeTty(id, isExec)
+				resizeExecTty(client, execID, terminalFd)
+			}
+		}()
+	}
+	// return nil
 }
+
 
 func resizeTty(client *docker.Client, containerID string, terminalFd uintptr) error {
 	height, width := getTtySize(terminalFd)
@@ -158,6 +208,7 @@ func resizeExecTty(client *docker.Client, containerID string, terminalFd uintptr
 }
 
 // From https://github.com/docker/docker/blob/0d70706b4b6bf9d5a5daf46dd147ca71270d0ab7/api/client/utils.go#L235-L247
+// Upgrade from commit deb6ea4702924ff390e4a57414f735b18e4d7185
 func getTtySize(terminalFd uintptr) (int, int) {
 	ws, err := term.GetWinsize(terminalFd)
 	if err != nil {
